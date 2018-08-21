@@ -114,6 +114,8 @@ class StackedLSTM(nn.Module):
         super().__init__()
         assert lstm_type != 'ca' or num_layers != 1, (
             'CA Stacked LSTM is equivalent to the plain LSTM when num_layers == 1')
+
+        self.num_layers = num_layers
         if lstm_type == 'plain':
             self.lstms = nn.ModuleList()
             for i in range(num_layers):
@@ -138,9 +140,11 @@ class StackedLSTM(nn.Module):
     def forward(self, inputs, length=None, hx=None):
         layer_inputs = inputs
         state = []
-        for layer in self.lstms:
+        if hx is None:
+            hx = [None] * self.num_layers
+        for layer, prev_state in zip(self.lstms, hx):
             layer_outputs, layer_state = layer(
-                inputs=layer_inputs, length=length, hx=hx)
+                inputs=layer_inputs, length=length, hx=prev_state)
             layer_inputs = layer_outputs
             state.append(layer_state)
         return layer_inputs, state
