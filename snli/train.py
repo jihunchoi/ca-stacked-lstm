@@ -62,8 +62,17 @@ def train(args):
 
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.Adam(trainable_params)
-    scheduler = lr_scheduler.ReduceLROnPlateau(
-        optimizer=optimizer, mode='max', factor=0.5, patience=10, verbose=True)
+    assert not args.warm_restart or args.cosine_lr
+    if args.cosine_lr:
+        if not args.warm_restart:
+            scheduler = lr_scheduler.CosineAnnealingLR(
+                optimizer=optimizer, T_max=len(train_loader) * args.max_epoch)
+        else:
+            scheduler = lr_scheduler.CosineAnnealingLR(
+                optimizer=optimizer, T_max=len(train_loader))
+    else:
+        scheduler = lr_scheduler.ReduceLROnPlateau(
+            optimizer=optimizer, mode='max', factor=0.5, patience=10, verbose=True)
     criterion = nn.CrossEntropyLoss()
 
     def run_iter(batch):
@@ -114,6 +123,16 @@ def train(args):
             model.train()
         train_clf_loss, train_accuracy = run_iter(train_batch)
         global_step += 1
+        if args.cosine_lr:
+            if not args.warm_restart:
+                scheduler.step()
+            else:
+                if scheduler.last_epoch == scheduler.T_max:
+                    scheduler.T_max = scheduler.T_max * 2
+                    scheduler.step(0)
+                    logger.info('Warm-restarted the learning rate!')
+                else:
+                    scheduler.step()
 
         train_summary_writer.add_scalar(
             tag='clf_loss', scalar_value=train_clf_loss,
@@ -125,15 +144,20 @@ def train(args):
         if global_step % validate_every == 0:
             progress = train_loader.iterations / len(train_loader)
             logger.info(f'* Epoch {progress:.2f}')
+            logger.info(f'  - lr = {scheduler.get_lr()[0]:.6f}')
             logger.info(f'  - Validation starts')
             valid_clf_loss, valid_accuracy = validate(valid_loader)
             _, test_accuracy = validate(test_loader)
-            scheduler.step(valid_accuracy)
+            if not args.cosine_lr:
+                scheduler.step(valid_accuracy)
             valid_summary_writer.add_scalar(
                 tag='clf_loss', scalar_value=valid_clf_loss,
                 global_step=global_step)
             valid_summary_writer.add_scalar(
                 tag='accuracy', scalar_value=valid_accuracy,
+                global_step=global_step)
+            valid_summary_writer.add_scalar(
+                tag='lr', scalar_value=scheduler.get_lr()[0],
                 global_step=global_step)
             logger.info(f'  - Valid clf loss: {valid_clf_loss:.5f}')
             logger.info(f'  - Valid accuracy: {valid_accuracy:.5f}')
@@ -183,6 +207,8 @@ def main():
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--max-epoch', type=int, default=10)
     parser.add_argument('--l2-weight', type=float, default=0)
+    parser.add_argument('--cosine-lr', default=False, action='store_true')
+    parser.add_argument('--warm-restart', default=False, action='store_true')
     parser.add_argument('--seed', default=123, type=int)
     parser.add_argument('--save-every-epoch', default=False, action='store_true')
     args = parser.parse_args()
@@ -208,6 +234,8 @@ def main():
                         'word_vector': args.word_vector,
                         'tune_word_embeddings': args.tune_word_embeddings,
                         'l2_weight': args.l2_weight,
+                        'cosine_lr': args.cosine_lr,
+                        'warm_restart': args.warm_restart,
                         'max_length': args.max_length,
                         'seed': args.seed}
               }

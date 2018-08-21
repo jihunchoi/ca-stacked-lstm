@@ -105,7 +105,7 @@ class SNLIModel(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.normal_(self.word_embedding.weight, mean=0, std=0.01)
+        nn.init.normal_(self.word_embedding.weight, mean=0, std=0.5)
         self.encoder.reset_parameters()
         if self.enc_bidir:
             self.encoder_bw.reset_parameters()
