@@ -167,6 +167,8 @@ def main():
     parser.add_argument('--mlp-no-bn', default=False, action='store_true')
     parser.add_argument('--matching-type', default='heuristic')
     parser.add_argument('--emb-dropout', type=float, default=0.1)
+    parser.add_argument('--enc-bidir', default=False, action='store_true')
+    parser.add_argument('--enc-bidir-init', default=False, action='store_true')
     parser.add_argument('--enc-lstm-type', default='ca')
     parser.add_argument('--enc-num-layers', type=int, default=3)
     parser.add_argument('--enc-pool-type', default='last')
@@ -194,6 +196,8 @@ def main():
                         'mlp_num_layers': args.mlp_num_layers,
                         'mlp_use_bn': not args.mlp_no_bn,
                         'enc_lstm_type': args.enc_lstm_type,
+                        'enc_bidir': args.enc_bidir,
+                        'enc_bidir_init': args.enc_bidir_init,
                         'enc_num_layers': args.enc_num_layers,
                         'enc_pool_type': args.enc_pool_type,
                         'emb_dropout_prob': args.emb_dropout,
