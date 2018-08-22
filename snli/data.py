@@ -8,7 +8,7 @@ from torchtext import data, datasets
 
 class TextField(data.Field):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self):
         super().__init__(tokenize=word_tokenize,
                          lower=True, include_lengths=True, batch_first=True)
 
