@@ -144,7 +144,7 @@ def train(args):
         if global_step % validate_every == 0:
             progress = train_loader.iterations / len(train_loader)
             logger.info(f'* Epoch {progress:.2f}')
-            logger.info(f'  - lr = {scheduler.get_lr()[0]:.6f}')
+            logger.info(f'  - lr = {optimizer.param_groups[0]["lr"]:.6f}')
             logger.info(f'  - Validation starts')
             valid_clf_loss, valid_accuracy = validate(valid_loader)
             _, test_accuracy = validate(test_loader)
@@ -157,7 +157,7 @@ def train(args):
                 tag='accuracy', scalar_value=valid_accuracy,
                 global_step=global_step)
             valid_summary_writer.add_scalar(
-                tag='lr', scalar_value=scheduler.get_lr()[0],
+                tag='lr', scalar_value=optimizer.param_groups[0]['lr'],
                 global_step=global_step)
             logger.info(f'  - Valid clf loss: {valid_clf_loss:.5f}')
             logger.info(f'  - Valid accuracy: {valid_accuracy:.5f}')
