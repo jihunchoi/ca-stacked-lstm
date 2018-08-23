@@ -41,14 +41,13 @@ class MaxPool(nn.Module):
         return inputs.max(1)[0]
 
 
-class SNLIModel(nn.Module):
+class QuoraModel(nn.Module):
 
     def __init__(self, num_words, num_classes,
                  word_dim, hidden_dim, enc_lstm_type, enc_bidir, enc_bidir_init,
                  enc_num_layers, enc_pool_type,
                  mlp_hidden_dim, mlp_num_layers, mlp_use_bn, matching_type,
-                 emb_dropout_prob, enc_dropout_prob, clf_dropout_prob,
-                 shared_h_lower_proj=False):
+                 emb_dropout_prob, enc_dropout_prob, clf_dropout_prob):
         super().__init__()
         self.num_words = num_words
         self.num_classes = num_classes
@@ -70,11 +69,11 @@ class SNLIModel(nn.Module):
             num_embeddings=num_words, embedding_dim=word_dim)
         self.encoder = caslstm.StackedLSTM(
             lstm_type=enc_lstm_type, input_size=word_dim, hidden_size=hidden_dim,
-            num_layers=enc_num_layers, shared_h_lower_proj=shared_h_lower_proj)
+            num_layers=enc_num_layers)
         if enc_bidir:
             self.encoder_bw = caslstm.StackedLSTM(
                 lstm_type=enc_lstm_type, input_size=word_dim, hidden_size=hidden_dim,
-                num_layers=enc_num_layers, shared_h_lower_proj=shared_h_lower_proj)
+                num_layers=enc_num_layers)
         if enc_pool_type == 'last':
             self.enc_pool = LastPool()
         elif enc_pool_type == 'max':

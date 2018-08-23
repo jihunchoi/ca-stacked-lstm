@@ -9,9 +9,9 @@ import yaml
 from tensorboardX import SummaryWriter
 from torch import nn, optim
 from torch.optim import lr_scheduler
-from torchtext import data, datasets
+from torchtext import data
 
-from .model import SNLIModel
+from .model import MNLIModel
 from .data import load_data, trim_dataset
 from .data import TextField, LabelField
 
@@ -29,24 +29,30 @@ def train(args):
 
     text_field = TextField()
     label_field = LabelField()
-    train_dataset, valid_dataset, test_dataset = load_data(
+    train_dataset, valid_m_dataset, valid_mm_dataset = load_data(
         root='data', text_field=text_field, label_field=label_field)
     # Our model will be run in 'open-vocabulary' mode.
-    text_field.build_vocab(train_dataset, valid_dataset, test_dataset)
+    text_field.build_vocab(train_dataset, valid_m_dataset, valid_mm_dataset)
     label_field.build_vocab(train_dataset)
     text_field.vocab.load_vectors(args.word_vector)
 
     # Trim training data to make them shorter than the max length
     trim_dataset(train_dataset, max_length=args.max_length)
 
-    train_loader, valid_loader, test_loader = data.Iterator.splits(
-        datasets=(train_dataset, valid_dataset, test_dataset),
+    train_loader, valid_m_loader, valid_mm_loader = data.Iterator.splits(
+        datasets=(train_dataset, valid_m_dataset, valid_mm_dataset),
         batch_size=args.batch_size, device=device)
+    if args.valid_type == 'matched':
+        valid_loader = valid_m_loader
+    elif args.valid_type == 'mismatched':
+        valid_loader = valid_mm_loader
+    else:
+        raise ValueError('Invalid valid type')
 
     config_path = os.path.join(args.save_dir, 'config.yml')
     with open(config_path, 'r') as f:
         config = yaml.load(f)
-    model = SNLIModel(num_words=len(text_field.vocab),
+    model = MNLIModel(num_words=len(text_field.vocab),
                       num_classes=len(label_field.vocab),
                       **config['model'])
     model.word_embedding.weight.data.set_(text_field.vocab.vectors)
@@ -56,12 +62,6 @@ def train(args):
 
     num_params = sum(p.numel() for p in model.parameters())
     num_intrinsic_params = num_params - model.word_embedding.weight.numel()
-    if args.shared_h_lower_proj:
-        params_to_subtract = (args.hidden_size ** 2) * (args.enc_num_layers - 2)
-        if args.enc_bidir:
-            params_to_subtract *= 2
-        num_params -= params_to_subtract
-        num_intrinsic_params -= params_to_subtract
     logger.info(f'* # of params: {num_params}')
     logger.info(f'  - Intrinsic: {num_intrinsic_params}')
     logger.info(f'  - Word embedding: {num_params - num_intrinsic_params}')
@@ -153,7 +153,6 @@ def train(args):
             logger.info(f'  - lr = {optimizer.param_groups[0]["lr"]:.6f}')
             logger.info(f'  - Validation starts')
             valid_clf_loss, valid_accuracy = validate(valid_loader)
-            _, test_accuracy = validate(test_loader)
             if not args.cosine_lr:
                 scheduler.step(valid_accuracy)
             valid_summary_writer.add_scalar(
@@ -167,7 +166,6 @@ def train(args):
                 global_step=global_step)
             logger.info(f'  - Valid clf loss: {valid_clf_loss:.5f}')
             logger.info(f'  - Valid accuracy: {valid_accuracy:.5f}')
-            logger.info(f'  - Test accuracy: {test_accuracy:.5f}')
             if valid_accuracy > best_valid_accuracy:
                 best_valid_accuracy = valid_accuracy
                 model_filename = (f'best-{progress:.2f}'
@@ -203,7 +201,6 @@ def main():
     parser.add_argument('--enc-num-layers', type=int, default=2)
     parser.add_argument('--enc-pool-type', default='max')
     parser.add_argument('--enc-dropout', type=float, default=0)
-    parser.add_argument('--shared-h-lower-proj', default=False, action='store_true')
     parser.add_argument('--clf-dropout', type=float, default=0.1)
     parser.add_argument('--word-vector', default='glove.840B.300d')
     parser.add_argument('--tune-word-embeddings', default=False,
@@ -218,6 +215,7 @@ def main():
     parser.add_argument('--warm-restart', default=False, action='store_true')
     parser.add_argument('--seed', default=123, type=int)
     parser.add_argument('--save-every-epoch', default=False, action='store_true')
+    parser.add_argument('--valid-type', required=True)
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -233,7 +231,6 @@ def main():
                         'enc_bidir_init': args.enc_bidir_init,
                         'enc_num_layers': args.enc_num_layers,
                         'enc_pool_type': args.enc_pool_type,
-                        'shared_h_lower_proj': args.shared_h_lower_proj,
                         'emb_dropout_prob': args.emb_dropout,
                         'enc_dropout_prob': args.enc_dropout,
                         'clf_dropout_prob': args.clf_dropout,
@@ -245,6 +242,7 @@ def main():
                         'cosine_lr': args.cosine_lr,
                         'warm_restart': args.warm_restart,
                         'max_length': args.max_length,
+                        'valid_type': args.valid_type,
                         'seed': args.seed}
               }
     pprint.pprint(config)

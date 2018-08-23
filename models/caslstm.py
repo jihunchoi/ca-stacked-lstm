@@ -6,11 +6,12 @@ class CALSTMCell(nn.Module):
 
     """Cell-aware LSTM cell."""
 
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, h_lower_proj=None):
         super().__init__()
         self.hidden_size = hidden_size
         self.linear = nn.Linear(in_features=2 * hidden_size,
                                 out_features=5 * hidden_size)
+        self.h_lower_proj = h_lower_proj
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -32,6 +33,8 @@ class CALSTMCell(nn.Module):
         h_cat = torch.cat([h_lower, h_prev], dim=1)
         lstm_matrix = self.linear(h_cat)
         i, f_prev, f_lower, u, o = lstm_matrix.chunk(chunks=5, dim=1)
+        if hasattr(self, 'h_lower_proj'):
+            f_lower = self.h_lower_proj(h_lower)
         c = (c_prev * (f_prev + 1).sigmoid()
              + c_lower * (f_lower + 1).sigmoid()
              + u.tanh() * i.sigmoid())
@@ -41,9 +44,9 @@ class CALSTMCell(nn.Module):
 
 class CALSTM(nn.Module):
 
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, h_lower_proj=None):
         super().__init__()
-        self.cell = CALSTMCell(hidden_size)
+        self.cell = CALSTMCell(hidden_size=hidden_size, h_lower_proj=h_lower_proj)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -110,12 +113,16 @@ class StatefulLSTM(nn.Module):
 
 class StackedLSTM(nn.Module):
 
-    def __init__(self, lstm_type, input_size, hidden_size, num_layers):
+    def __init__(self, lstm_type, input_size, hidden_size, num_layers,
+                 shared_h_lower_proj=False):
         super().__init__()
         assert lstm_type != 'ca' or num_layers != 1, (
             'CA Stacked LSTM is equivalent to the plain LSTM when num_layers == 1')
+        assert lstm_type != 'plain' or not shared_h_lower_proj, (
+            'shared_h_lower_proj is ignored when lstm_type == plain')
 
         self.num_layers = num_layers
+        self.shared_h_lower_proj = shared_h_lower_proj
         if lstm_type == 'plain':
             self.lstms = nn.ModuleList()
             for i in range(num_layers):
@@ -128,14 +135,24 @@ class StackedLSTM(nn.Module):
             self.lstms.append(StatefulLSTM(input_size=input_size,
                                            hidden_size=hidden_size))
             for i in range(1, num_layers):
-                self.lstms.append(CALSTM(hidden_size))
+                h_lower_proj = None
+                if shared_h_lower_proj:
+                    h_lower_proj = nn.Linear(
+                        in_features=hidden_size, out_features=hidden_size, bias=False)
+                self.lstms.append(CALSTM(hidden_size=hidden_size,
+                                         h_lower_proj=h_lower_proj))
         else:
             raise ValueError('Unknown LSTM type')
         self.reset_parameters()
 
+    def extra_repr(self):
+        return f'shared_h_lower_proj={self.shared_h_lower_proj}'
+
     def reset_parameters(self):
         for layer in self.lstms:
             layer.reset_parameters()
+        if self.shared_h_lower_proj:
+            nn.init.orthogonal_(self.lstms[1].cell.h_lower_proj.weight)
 
     def forward(self, inputs, length=None, hx=None):
         layer_inputs = inputs

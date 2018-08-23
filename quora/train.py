@@ -11,7 +11,7 @@ from torch import nn, optim
 from torch.optim import lr_scheduler
 from torchtext import data, datasets
 
-from .model import SNLIModel
+from .model import QuoraModel
 from .data import load_data, trim_dataset
 from .data import TextField, LabelField
 
@@ -46,9 +46,9 @@ def train(args):
     config_path = os.path.join(args.save_dir, 'config.yml')
     with open(config_path, 'r') as f:
         config = yaml.load(f)
-    model = SNLIModel(num_words=len(text_field.vocab),
-                      num_classes=len(label_field.vocab),
-                      **config['model'])
+    model = QuoraModel(num_words=len(text_field.vocab),
+                       num_classes=len(label_field.vocab),
+                       **config['model'])
     model.word_embedding.weight.data.set_(text_field.vocab.vectors)
     model.word_embedding.weight.requires_grad = args.tune_word_embeddings
     print(model)
@@ -56,12 +56,6 @@ def train(args):
 
     num_params = sum(p.numel() for p in model.parameters())
     num_intrinsic_params = num_params - model.word_embedding.weight.numel()
-    if args.shared_h_lower_proj:
-        params_to_subtract = (args.hidden_size ** 2) * (args.enc_num_layers - 2)
-        if args.enc_bidir:
-            params_to_subtract *= 2
-        num_params -= params_to_subtract
-        num_intrinsic_params -= params_to_subtract
     logger.info(f'* # of params: {num_params}')
     logger.info(f'  - Intrinsic: {num_intrinsic_params}')
     logger.info(f'  - Word embedding: {num_params - num_intrinsic_params}')
@@ -203,7 +197,6 @@ def main():
     parser.add_argument('--enc-num-layers', type=int, default=2)
     parser.add_argument('--enc-pool-type', default='max')
     parser.add_argument('--enc-dropout', type=float, default=0)
-    parser.add_argument('--shared-h-lower-proj', default=False, action='store_true')
     parser.add_argument('--clf-dropout', type=float, default=0.1)
     parser.add_argument('--word-vector', default='glove.840B.300d')
     parser.add_argument('--tune-word-embeddings', default=False,
@@ -233,7 +226,6 @@ def main():
                         'enc_bidir_init': args.enc_bidir_init,
                         'enc_num_layers': args.enc_num_layers,
                         'enc_pool_type': args.enc_pool_type,
-                        'shared_h_lower_proj': args.shared_h_lower_proj,
                         'emb_dropout_prob': args.emb_dropout,
                         'enc_dropout_prob': args.enc_dropout,
                         'clf_dropout_prob': args.clf_dropout,
