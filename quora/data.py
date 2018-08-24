@@ -23,7 +23,7 @@ def create_examples(path, text_field, label_field):
     examples = []
     with open(path, 'r') as f:
         for line in f:
-            label, text1, text2 = line.split('\t')
+            label, text1, text2 = line.split('\t')[:3]
             examples.append(data.Example.fromlist(
                 data=(text1, text2, label),
                 fields=[('text1', text_field), ('text2', text_field),
@@ -51,12 +51,12 @@ def load_data(root, text_field, label_field):
             examples=valid_examples,
             fields=[('text1', text_field), ('text2', text_field),
                     ('label', label_field)])
-        train_dataset.sort_key = lambda ex: len(ex.text1)
+        valid_dataset.sort_key = lambda ex: len(ex.text1)
         test_dataset = data.Dataset(
             examples=test_examples,
             fields=[('text1', text_field), ('text2', text_field),
                     ('label', label_field)])
-        train_dataset.sort_key = lambda ex: len(ex.text1)
+        test_dataset.sort_key = lambda ex: len(ex.text1)
     else:
         train_examples = create_examples(
             path=os.path.join(quora_dir, 'train.tsv'),
@@ -76,12 +76,13 @@ def load_data(root, text_field, label_field):
             examples=valid_examples,
             fields=[('text1', text_field), ('text2', text_field),
                     ('label', label_field)])
-        train_dataset.sort_key = lambda ex: len(ex.text1)
+        valid_dataset.sort_key = lambda ex: len(ex.text1)
         test_dataset = data.Dataset(
             examples=test_examples,
             fields=[('text1', text_field), ('text2', text_field),
                     ('label', label_field)])
-        train_dataset.sort_key = lambda ex: len(ex.text1)
+        test_dataset.sort_key = lambda ex: len(ex.text1)
+        os.makedirs(datasets_dir)
         torch.save(train_dataset.examples, train_examples_path)
         torch.save(valid_dataset.examples, valid_examples_path)
         torch.save(test_dataset.examples, test_examples_path)

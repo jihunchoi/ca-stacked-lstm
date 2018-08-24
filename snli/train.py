@@ -57,7 +57,7 @@ def train(args):
     num_params = sum(p.numel() for p in model.parameters())
     num_intrinsic_params = num_params - model.word_embedding.weight.numel()
     if args.shared_h_lower_proj:
-        params_to_subtract = (args.hidden_size ** 2) * (args.enc_num_layers - 2)
+        params_to_subtract = (args.hidden_dim ** 2) * (args.enc_num_layers - 2)
         if args.enc_bidir:
             params_to_subtract *= 2
         num_params -= params_to_subtract

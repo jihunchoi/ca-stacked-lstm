@@ -76,8 +76,8 @@ def train(args):
     criterion = nn.CrossEntropyLoss()
 
     def run_iter(batch):
-        pre_text, pre_length = batch.premise
-        hyp_text, hyp_length = batch.hypothesis
+        pre_text, pre_length = batch.text1
+        hyp_text, hyp_length = batch.text2
         label = batch.label
         logit = model(pre_inputs=pre_text, pre_length=pre_length,
                       hyp_inputs=hyp_text, hyp_length=hyp_length)
@@ -189,7 +189,7 @@ def main():
     parser.add_argument('--mlp-hidden-dim', type=int, default=1024)
     parser.add_argument('--mlp-num-layers', type=int, default=1)
     parser.add_argument('--mlp-no-bn', default=False, action='store_true')
-    parser.add_argument('--matching-type', default='heuristic')
+    parser.add_argument('--matching-type', default='pi')
     parser.add_argument('--emb-dropout', type=float, default=0.1)
     parser.add_argument('--enc-bidir', default=False, action='store_true')
     parser.add_argument('--enc-bidir-init', default=False, action='store_true')
@@ -201,7 +201,7 @@ def main():
     parser.add_argument('--word-vector', default='glove.840B.300d')
     parser.add_argument('--tune-word-embeddings', default=False,
                         action='store_true')
-    parser.add_argument('--max-length', type=int, default=35)
+    parser.add_argument('--max-length', type=int, default=25)
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--save-dir', required=True)
     parser.add_argument('--device', default='cuda:0')

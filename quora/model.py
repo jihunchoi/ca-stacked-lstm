@@ -88,6 +88,8 @@ class QuoraModel(nn.Module):
             self.matching = matching.HeuristicMatching(vec_dim)
         elif matching_type == 'heuristic2':
             self.matching = matching.HeuristicMatching2(vec_dim)
+        elif matching_type == 'pi':
+            self.matching = matching.PIMatching(vec_dim)
         else:
             raise ValueError('Unknown matching type')
 

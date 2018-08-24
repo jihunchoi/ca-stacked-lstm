@@ -9,14 +9,25 @@ class CALSTMCell(nn.Module):
     def __init__(self, hidden_size, h_lower_proj=None):
         super().__init__()
         self.hidden_size = hidden_size
-        self.linear = nn.Linear(in_features=2 * hidden_size,
-                                out_features=5 * hidden_size)
+        if h_lower_proj is not None:
+            self.linear_hh = nn.Linear(in_features=hidden_size,
+                                       out_features=5 * hidden_size)
+            self.linear_ih = nn.Linear(in_features=hidden_size,
+                                       out_features=4 * hidden_size, bias=False)
+        else:
+            self.linear = nn.Linear(in_features=2 * hidden_size,
+                                    out_features=5 * hidden_size)
         self.h_lower_proj = h_lower_proj
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.orthogonal_(self.linear.weight)
-        nn.init.constant_(self.linear.bias, val=0)
+        if self.h_lower_proj is not None:
+            nn.init.orthogonal_(self.linear_hh.weight)
+            nn.init.orthogonal_(self.linear_ih.weight)
+            nn.init.constant_(self.linear_hh.bias, val=0)
+        else:
+            nn.init.orthogonal_(self.linear.weight)
+            nn.init.constant_(self.linear.bias, val=0)
 
     def forward(self, input, hx=None):
         """
@@ -30,10 +41,20 @@ class CALSTMCell(nn.Module):
             zero_state = torch.zeros(h_lower.shape[0], self.hidden_size, device=device)
             hx = (zero_state, zero_state)
         h_prev, c_prev = hx
-        h_cat = torch.cat([h_lower, h_prev], dim=1)
-        lstm_matrix = self.linear(h_cat)
-        i, f_prev, f_lower, u, o = lstm_matrix.chunk(chunks=5, dim=1)
-        if hasattr(self, 'h_lower_proj'):
+        if self.h_lower_proj is not None:
+            ih, fh_prev, fh_lower, uh, oh = (
+                self.linear_hh(h_prev).chunk(chunks=5, dim=1))
+            il, fl_prev, ul, ol = self.linear_ih(h_lower).chunk(chunks=4, dim=1)
+            i = ih + il
+            f_prev = fh_prev + fl_prev
+            f_lower = fh_lower + self.h_lower_proj(h_lower)  # Trick.
+            u = uh + ul
+            o = oh + ol
+        else:
+            h_cat = torch.cat([h_lower, h_prev], dim=1)
+            lstm_matrix = self.linear(h_cat)
+            i, f_prev, f_lower, u, o = lstm_matrix.chunk(chunks=5, dim=1)
+        if self.h_lower_proj is not None:
             f_lower = self.h_lower_proj(h_lower)
         c = (c_prev * (f_prev + 1).sigmoid()
              + c_lower * (f_lower + 1).sigmoid()

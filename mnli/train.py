@@ -29,12 +29,18 @@ def train(args):
 
     text_field = TextField()
     label_field = LabelField()
-    train_dataset, valid_m_dataset, valid_mm_dataset = load_data(
+    (train_dataset, valid_m_dataset, valid_mm_dataset,
+     test_m_dataset, test_mm_dataset) = load_data(
         root='data', text_field=text_field, label_field=label_field)
     # Our model will be run in 'open-vocabulary' mode.
-    text_field.build_vocab(train_dataset, valid_m_dataset, valid_mm_dataset)
+    text_field.build_vocab(train_dataset, valid_m_dataset, valid_mm_dataset,
+                           test_m_dataset, test_mm_dataset)
     label_field.build_vocab(train_dataset)
     text_field.vocab.load_vectors(args.word_vector)
+
+    # Dirty trick
+    train_dataset.fields['pair_id'].use_vocab = True
+    train_dataset.fields['pair_id'].build_vocab()
 
     # Trim training data to make them shorter than the max length
     trim_dataset(train_dataset, max_length=args.max_length)
@@ -205,7 +211,7 @@ def main():
     parser.add_argument('--word-vector', default='glove.840B.300d')
     parser.add_argument('--tune-word-embeddings', default=False,
                         action='store_true')
-    parser.add_argument('--max-length', type=int, default=35)
+    parser.add_argument('--max-length', type=int, default=55)
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--save-dir', required=True)
     parser.add_argument('--device', default='cuda:0')
