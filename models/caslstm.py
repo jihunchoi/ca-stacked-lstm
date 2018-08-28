@@ -6,9 +6,10 @@ class CALSTMCell(nn.Module):
 
     """Cell-aware LSTM cell."""
 
-    def __init__(self, hidden_size, h_lower_proj=None):
+    def __init__(self, hidden_size, h_lower_proj=None, fuse_type=False):
         super().__init__()
         self.hidden_size = hidden_size
+        self.fuse_type = fuse_type
         if h_lower_proj is not None:
             self.linear_hh = nn.Linear(in_features=hidden_size,
                                        out_features=5 * hidden_size)
@@ -17,8 +18,13 @@ class CALSTMCell(nn.Module):
         else:
             self.linear = nn.Linear(in_features=2 * hidden_size,
                                     out_features=5 * hidden_size)
+        if fuse_type == 'param':
+            self.forget_weight = nn.Parameter(torch.FloatTensor(hidden_size))
         self.h_lower_proj = h_lower_proj
         self.reset_parameters()
+
+    def extra_repr(self):
+        return f'fuse_type={self.fuse_type}'
 
     def reset_parameters(self):
         if self.h_lower_proj is not None:
@@ -28,6 +34,8 @@ class CALSTMCell(nn.Module):
         else:
             nn.init.orthogonal_(self.linear.weight)
             nn.init.constant_(self.linear.bias, val=0)
+        if self.fuse_type == 'param':
+            nn.init.normal_(self.forget_weight, mean=0, std=0.01)
 
     def forward(self, input, hx=None):
         """
@@ -54,20 +62,31 @@ class CALSTMCell(nn.Module):
             h_cat = torch.cat([h_lower, h_prev], dim=1)
             lstm_matrix = self.linear(h_cat)
             i, f_prev, f_lower, u, o = lstm_matrix.chunk(chunks=5, dim=1)
-        if self.h_lower_proj is not None:
-            f_lower = self.h_lower_proj(h_lower)
-        c = (c_prev * (f_prev + 1).sigmoid()
-             + c_lower * (f_lower + 1).sigmoid()
-             + u.tanh() * i.sigmoid())
+        if self.fuse_type == 'add':
+            c = (c_prev * (f_prev + 1).sigmoid()
+                 + c_lower * (f_lower + 1).sigmoid()
+                 + u.tanh() * i.sigmoid())
+        elif self.fuse_type == 'avg':
+            c = (0.5 * (c_prev * (f_prev + 1).sigmoid()
+                       + c_lower * (f_lower + 1).sigmoid())
+                 + u.tanh() * i.sigmoid())
+        elif self.fuse_type == 'param':
+            weight = self.forget_weight.sigmoid()
+            c = (weight * (c_prev * (f_prev + 1).sigmoid())
+                 + (1 - weight) * (c_lower * (f_lower + 1).sigmoid())
+                 + u.tanh() * i.sigmoid())
+        else:
+            raise ValueError('Unknown fuse type')
         h = o.sigmoid() * c.tanh()
         return h, c
 
 
 class CALSTM(nn.Module):
 
-    def __init__(self, hidden_size, h_lower_proj=None):
+    def __init__(self, hidden_size, h_lower_proj=None, fuse_type=False):
         super().__init__()
-        self.cell = CALSTMCell(hidden_size=hidden_size, h_lower_proj=h_lower_proj)
+        self.cell = CALSTMCell(hidden_size=hidden_size, h_lower_proj=h_lower_proj,
+                               fuse_type=fuse_type)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -135,7 +154,7 @@ class StatefulLSTM(nn.Module):
 class StackedLSTM(nn.Module):
 
     def __init__(self, lstm_type, input_size, hidden_size, num_layers,
-                 shared_h_lower_proj=False):
+                 shared_h_lower_proj=False, fuse_type=False):
         super().__init__()
         assert lstm_type != 'ca' or num_layers != 1, (
             'CA Stacked LSTM is equivalent to the plain LSTM when num_layers == 1')
@@ -161,7 +180,7 @@ class StackedLSTM(nn.Module):
                     h_lower_proj = nn.Linear(
                         in_features=hidden_size, out_features=hidden_size, bias=False)
                 self.lstms.append(CALSTM(hidden_size=hidden_size,
-                                         h_lower_proj=h_lower_proj))
+                                         h_lower_proj=h_lower_proj, fuse_type=fuse_type))
         else:
             raise ValueError('Unknown LSTM type')
         self.reset_parameters()

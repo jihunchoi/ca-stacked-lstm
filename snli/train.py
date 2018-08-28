@@ -203,6 +203,7 @@ def main():
     parser.add_argument('--enc-num-layers', type=int, default=2)
     parser.add_argument('--enc-pool-type', default='max')
     parser.add_argument('--enc-dropout', type=float, default=0)
+    parser.add_argument('--fuse-type', default='add')
     parser.add_argument('--shared-h-lower-proj', default=False, action='store_true')
     parser.add_argument('--clf-dropout', type=float, default=0.1)
     parser.add_argument('--word-vector', default='glove.840B.300d')
@@ -233,6 +234,7 @@ def main():
                         'enc_bidir_init': args.enc_bidir_init,
                         'enc_num_layers': args.enc_num_layers,
                         'enc_pool_type': args.enc_pool_type,
+                        'fuse_type': args.fuse_type,
                         'shared_h_lower_proj': args.shared_h_lower_proj,
                         'emb_dropout_prob': args.emb_dropout,
                         'enc_dropout_prob': args.enc_dropout,

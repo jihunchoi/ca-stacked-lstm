@@ -48,7 +48,7 @@ class SNLIModel(nn.Module):
                  enc_num_layers, enc_pool_type,
                  mlp_hidden_dim, mlp_num_layers, mlp_use_bn, matching_type,
                  emb_dropout_prob, enc_dropout_prob, clf_dropout_prob,
-                 shared_h_lower_proj=False):
+                 shared_h_lower_proj=False, fuse_type='add'):
         super().__init__()
         self.num_words = num_words
         self.num_classes = num_classes
@@ -70,11 +70,13 @@ class SNLIModel(nn.Module):
             num_embeddings=num_words, embedding_dim=word_dim)
         self.encoder = caslstm.StackedLSTM(
             lstm_type=enc_lstm_type, input_size=word_dim, hidden_size=hidden_dim,
-            num_layers=enc_num_layers, shared_h_lower_proj=shared_h_lower_proj)
+            num_layers=enc_num_layers, shared_h_lower_proj=shared_h_lower_proj,
+            fuse_type=fuse_type)
         if enc_bidir:
             self.encoder_bw = caslstm.StackedLSTM(
                 lstm_type=enc_lstm_type, input_size=word_dim, hidden_size=hidden_dim,
-                num_layers=enc_num_layers, shared_h_lower_proj=shared_h_lower_proj)
+                num_layers=enc_num_layers, shared_h_lower_proj=shared_h_lower_proj,
+                fuse_type=fuse_type)
         if enc_pool_type == 'last':
             self.enc_pool = LastPool()
         elif enc_pool_type == 'max':

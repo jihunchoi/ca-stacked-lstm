@@ -47,7 +47,8 @@ class QuoraModel(nn.Module):
                  word_dim, hidden_dim, enc_lstm_type, enc_bidir, enc_bidir_init,
                  enc_num_layers, enc_pool_type,
                  mlp_hidden_dim, mlp_num_layers, mlp_use_bn, matching_type,
-                 emb_dropout_prob, enc_dropout_prob, clf_dropout_prob):
+                 emb_dropout_prob, enc_dropout_prob, clf_dropout_prob,
+                 fuse_type='add'):
         super().__init__()
         self.num_words = num_words
         self.num_classes = num_classes
@@ -69,11 +70,11 @@ class QuoraModel(nn.Module):
             num_embeddings=num_words, embedding_dim=word_dim)
         self.encoder = caslstm.StackedLSTM(
             lstm_type=enc_lstm_type, input_size=word_dim, hidden_size=hidden_dim,
-            num_layers=enc_num_layers)
+            num_layers=enc_num_layers, fuse_type=fuse_type)
         if enc_bidir:
             self.encoder_bw = caslstm.StackedLSTM(
                 lstm_type=enc_lstm_type, input_size=word_dim, hidden_size=hidden_dim,
-                num_layers=enc_num_layers)
+                num_layers=enc_num_layers, fuse_type=fuse_type)
         if enc_pool_type == 'last':
             self.enc_pool = LastPool()
         elif enc_pool_type == 'max':
