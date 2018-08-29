@@ -112,7 +112,7 @@ def train(args):
     valid_summary_writer = SummaryWriter(
         os.path.join(args.save_dir, 'log', 'valid'))
 
-    validate_every = len(train_loader) // 2
+    validate_every = len(train_loader) // args.verbosity
     best_valid_accuracy = 0
     global_step = 0
     logger.info('Training starts!')
@@ -200,6 +200,7 @@ def main():
     parser.add_argument('--fix-word-embeddings', default=False,
                         action='store_true')
     parser.add_argument('--batch-size', type=int, default=128)
+    parser.add_argument('--verbosity', type=int, default=2)
     parser.add_argument('--save-dir', required=True)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--max-epoch', type=int, default=50)
@@ -229,6 +230,7 @@ def main():
                         'enc_dropout_prob': args.enc_dropout,
                         'clf_dropout_prob': args.clf_dropout},
               'train': {'batch_size': args.batch_size,
+                        'verbosity': args.verbosity,
                         'word_vector': args.word_vector,
                         'fix_word_embeddings': args.fix_word_embeddings,
                         'l2_weight': args.l2_weight,
