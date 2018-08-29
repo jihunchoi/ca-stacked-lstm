@@ -111,6 +111,7 @@ class SSTModel(nn.Module):
         if self.enc_bidir:
             inputs_bw_emb = utils.reverse_padded_sequence(
                 inputs=inputs_emb, length=length)
+            hx_bw = None
             if self.enc_bidir_init:
                 hx_bw = hx
             (hs_bw, cs_bw), hx_bw = self.encoder_bw(inputs=inputs_bw_emb, hx=hx_bw)

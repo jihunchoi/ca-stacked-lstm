@@ -62,6 +62,8 @@ def train(args):
         optimizer = optim.Adam(trainable_params)
     elif args.optimizer == 'adadelta':
         optimizer = optim.Adadelta(trainable_params)
+    else:
+        raise ValueError('Unknown optimizer')
     assert not args.warm_restart or args.cosine_lr
     if args.cosine_lr:
         if not args.warm_restart:
