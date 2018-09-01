@@ -148,3 +148,18 @@ class AllNLIModel(nn.Module):
         mlp_output = self.mlp(mlp_input)
         logit = self.output_linear(mlp_output)
         return logit
+
+    def encode(self, inputs, length):
+        inputs_emb = self.word_embedding(inputs)
+        (hs, cs), hx = self.encoder(inputs=inputs_emb)
+        if self.enc_bidir:
+            inputs_bw_emb = utils.reverse_padded_sequence(
+                inputs=inputs_emb, length=length)
+            hx_bw = None
+            if self.enc_bidir_init:
+                hx_bw = hx
+            (hs_bw, cs_bw), hx_bw = self.encoder_bw(
+                inputs=inputs_bw_emb, hx=hx_bw)
+            hs = torch.cat([hs, hs_bw], dim=2)
+        sentence_vector = self.enc_pool(inputs=hs, length=length)
+        return sentence_vector
