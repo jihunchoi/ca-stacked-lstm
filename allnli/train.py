@@ -86,11 +86,7 @@ def train(args):
             scheduler = lr_scheduler.CosineAnnealingLR(
                 optimizer=optimizer, T_max=len(train_loader))
     else:
-        scheduler = lr_scheduler.LambdaLR(
-            optimizer=optimizer,
-            lr_lambda=lambda epoch: max(0.99 ** (epoch / args.verbosity),
-                                        args.min_lr / args.lr))
-        plateau_scheduler = lr_scheduler.ReduceLROnPlateau(
+        scheduler = lr_scheduler.ReduceLROnPlateau(
             optimizer=optimizer, mode='max', factor=0.2, patience=0,
             verbose=True, min_lr=args.min_lr)
     criterion = nn.CrossEntropyLoss()
@@ -194,8 +190,11 @@ def train(args):
                 torch.save(model.state_dict(), model_path)
                 logger.info(f'  - Saved the new model to: {model_path}')
             if not args.cosine_lr:
-                scheduler.step()
-                plateau_scheduler.step(valid_accuracy)
+                scheduler.step(valid_accuracy)
+            cur_lr = optimizer.param_groups[0]['lr']
+            new_lr = max(cur_lr * args.lr_decay, args.min_lr)
+            optimizer.param_groups[0]['lr'] = new_lr
+            print(f'Update LR to: {new_lr:.6f}')
 
         if train_loader.epoch > args.max_epoch:
             break
