@@ -88,8 +88,8 @@ def train(args):
     else:
         scheduler = lr_scheduler.LambdaLR(
             optimizer=optimizer,
-            lr_lambda=lambda epoch: max(args.lr * (0.99 ** (epoch / args.verbosity)),
-                                        args.min_lr))
+            lr_lambda=lambda epoch: max(0.99 ** (epoch / args.verbosity),
+                                        args.min_lr / args.lr))
         plateau_scheduler = lr_scheduler.ReduceLROnPlateau(
             optimizer=optimizer, mode='max', factor=0.2, patience=0,
             verbose=True, min_lr=args.min_lr)
