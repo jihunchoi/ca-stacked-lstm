@@ -76,7 +76,10 @@ class CALSTMCell(nn.Module):
                  + (1 - weight) * (c_lower * (f_lower + 1).sigmoid())
                  + u.tanh() * i.sigmoid())
         else:
-            raise ValueError('Unknown fuse type')
+            lam = 1 - float(self.fuse_type)
+            c = (lam * (c_prev * (f_prev + 1).sigmoid())
+                 + (1 - lam) * (c_lower * (f_lower + 1).sigmoid())
+                 + u.tanh() * i.sigmoid())
         h = o.sigmoid() * c.tanh()
         return h, c
 
@@ -87,6 +90,89 @@ class CALSTM(nn.Module):
         super().__init__()
         self.cell = CALSTMCell(hidden_size=hidden_size, h_lower_proj=h_lower_proj,
                                fuse_type=fuse_type)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.cell.reset_parameters()
+
+    def forward(self, inputs, length=None, hx=None):
+        """
+        inputs: A tuple of (h, c), each of which is in shape (B, T, Dh).
+        """
+
+        batch_size, max_length = inputs[0].shape[:2]
+        hs = []
+        cs = []
+        for t in range(max_length):
+            hx = self.cell(input=(inputs[0][:, t], inputs[1][:, t]), hx=hx)
+            hs.append(hx[0])
+            cs.append(hx[1])
+        hs = torch.stack(hs, dim=1)
+        cs = torch.stack(cs, dim=1)
+        if length is not None:
+            h = hs[range(batch_size), length - 1]
+            c = cs[range(batch_size), length - 1]
+            hx = (h, c)
+        return (hs, cs), hx
+
+
+class HighwayLSTMCell(nn.Module):
+
+    """Cell-aware LSTM cell."""
+
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.linear = nn.Linear(in_features=2 * hidden_size,
+                                out_features=4 * hidden_size)
+        self.linear_xd = nn.Linear(in_features=hidden_size, out_features=hidden_size)
+        self.peephole_ci = nn.Parameter(torch.FloatTensor(hidden_size))
+        self.peephole_cf = nn.Parameter(torch.FloatTensor(hidden_size))
+        self.peephole_co = nn.Parameter(torch.FloatTensor(hidden_size))
+        self.peephole_cd = nn.Parameter(torch.FloatTensor(hidden_size))
+        self.peephole_ld = nn.Parameter(torch.FloatTensor(hidden_size))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.orthogonal_(self.linear.weight)
+        nn.init.constant_(self.linear.bias, val=0)
+        nn.init.kaiming_normal_(self.linear_xd.weight)
+        nn.init.constant_(self.linear_xd.bias, val=0)
+        nn.init.normal_(self.peephole_ci, mean=0, std=0.01)
+        nn.init.normal_(self.peephole_cf, mean=0, std=0.01)
+        nn.init.normal_(self.peephole_co, mean=0, std=0.01)
+        nn.init.normal_(self.peephole_cd, mean=0, std=0.01)
+        nn.init.normal_(self.peephole_ld, mean=0, std=0.01)
+
+    def forward(self, input, hx=None):
+        """
+        input: (h, c)
+        hx: (h, c)
+        """
+
+        h_lower, c_lower = input
+        if hx is None:
+            device = h_lower.device
+            zero_state = torch.zeros(h_lower.shape[0], self.hidden_size, device=device)
+            hx = (zero_state, zero_state)
+        h_prev, c_prev = hx
+        h_cat = torch.cat([h_lower, h_prev], dim=1)
+        lstm_matrix = self.linear(h_cat)
+        i, f, o, u = lstm_matrix.chunk(chunks=4, dim=1)
+        i = i + self.peephole_ci*c_prev
+        f = f + self.peephole_cf*c_prev
+        o = f + self.peephole_co*c_prev
+        d = self.linear_xd(h_lower) + self.peephole_cd*c_prev + self.peephole_ld*c_lower
+        c = d.sigmoid()*c_lower + f.sigmoid()*c_prev + i.sigmoid()*u.tanh()
+        h = o.sigmoid() * c.tanh()
+        return h, c
+
+
+class HighwayLSTM(nn.Module):
+
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.cell = HighwayLSTMCell(hidden_size=hidden_size)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -181,6 +267,12 @@ class StackedLSTM(nn.Module):
                         in_features=hidden_size, out_features=hidden_size, bias=False)
                 self.lstms.append(CALSTM(hidden_size=hidden_size,
                                          h_lower_proj=h_lower_proj, fuse_type=fuse_type))
+        elif lstm_type == 'highway':
+            self.lstms = nn.ModuleList()
+            self.lstms.append(StatefulLSTM(input_size=input_size,
+                                           hidden_size=hidden_size))
+            for i in range(1, num_layers):
+                self.lstms.append(HighwayLSTM(hidden_size=hidden_size))
         else:
             raise ValueError('Unknown LSTM type')
         self.reset_parameters()
