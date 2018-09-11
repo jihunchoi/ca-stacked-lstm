@@ -1,5 +1,43 @@
+import math
+
 import torch
 from torch import nn
+
+
+class LSTMCell(nn.Module):
+
+    def __init__(self, input_size, hidden_size, bias=True):
+        super(LSTMCell, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.bias = bias
+        self.weight_ih = nn.Parameter(torch.Tensor(4 * hidden_size, input_size))
+        self.weight_hh = nn.Parameter(torch.Tensor(4 * hidden_size, hidden_size))
+        if bias:
+            self.bias_ih = nn.Parameter(torch.Tensor(4 * hidden_size))
+            self.bias_hh = nn.Parameter(torch.Tensor(4 * hidden_size))
+        else:
+            self.register_parameter('bias_ih', None)
+            self.register_parameter('bias_hh', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1.0 / math.sqrt(self.hidden_size)
+        for weight in self.parameters():
+            weight.data.uniform_(-stdv, stdv)
+
+    def forward(self, input, hx=None):
+        if hx is None:
+            hx = input.new_zeros(input.size(0), self.hidden_size, requires_grad=False)
+            hx = (hx, hx)
+        lstm_matrix = (torch.matmul(input, self.weight_ih.t())
+                       + torch.matmul(hx[0], self.weight_hh.t()))
+        if self.bias:
+            lstm_matrix = lstm_matrix + self.bias_ih + self.bias_hh
+        i, f, g, o = lstm_matrix.chunk(chunks=4, dim=1)
+        c = i.sigmoid()*g.tanh() + f.sigmoid()*hx[1]
+        h = o.sigmoid() * c.tanh()
+        return (h, c), (f.sigmoid(), o.sigmoid())
 
 
 class CALSTMCell(nn.Module):
@@ -81,7 +119,7 @@ class CALSTMCell(nn.Module):
                  + (1 - lam) * (c_lower * (f_lower + 1).sigmoid())
                  + u.tanh() * i.sigmoid())
         h = o.sigmoid() * c.tanh()
-        return h, c
+        return (h, c), ((f_prev + 1).sigmoid(), (f_lower + 1).sigmoid(), o.sigmoid())
 
 
 class CALSTM(nn.Module):
@@ -104,7 +142,7 @@ class CALSTM(nn.Module):
         hs = []
         cs = []
         for t in range(max_length):
-            hx = self.cell(input=(inputs[0][:, t], inputs[1][:, t]), hx=hx)
+            hx, _ = self.cell(input=(inputs[0][:, t], inputs[1][:, t]), hx=hx)
             hs.append(hx[0])
             cs.append(hx[1])
         hs = torch.stack(hs, dim=1)
@@ -203,7 +241,7 @@ class StatefulLSTM(nn.Module):
 
     def __init__(self, input_size, hidden_size):
         super().__init__()
-        self.cell = nn.LSTMCell(input_size=input_size, hidden_size=hidden_size)
+        self.cell = LSTMCell(input_size=input_size, hidden_size=hidden_size)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -225,7 +263,7 @@ class StatefulLSTM(nn.Module):
             inputs = inputs[0]
         batch_size, max_length = inputs.shape[:2]
         for t in range(max_length):
-            hx = self.cell(input=inputs[:, t], hx=hx)
+            hx = self.cell(input=inputs[:, t], hx=hx)[0]
             hs.append(hx[0])
             cs.append(hx[1])
         hs = torch.stack(hs, dim=1)
@@ -247,15 +285,12 @@ class StackedLSTM(nn.Module):
         assert lstm_type != 'plain' or not shared_h_lower_proj, (
             'shared_h_lower_proj is ignored when lstm_type == plain')
 
+        self.lstm_type = lstm_type
         self.num_layers = num_layers
         self.shared_h_lower_proj = shared_h_lower_proj
         if lstm_type == 'plain':
-            self.lstms = nn.ModuleList()
-            for i in range(num_layers):
-                layer_input_size = input_size if i == 0 else hidden_size
-                layer = StatefulLSTM(input_size=layer_input_size,
-                                     hidden_size=hidden_size)
-                self.lstms.append(layer)
+            self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
+                                num_layers=num_layers, batch_first=True)
         elif lstm_type == 'ca':
             self.lstms = nn.ModuleList()
             self.lstms.append(StatefulLSTM(input_size=input_size,
@@ -281,19 +316,26 @@ class StackedLSTM(nn.Module):
         return f'shared_h_lower_proj={self.shared_h_lower_proj}'
 
     def reset_parameters(self):
-        for layer in self.lstms:
-            layer.reset_parameters()
+        if self.lstm_type != 'plain':
+            for layer in self.lstms:
+                layer.reset_parameters()
+        else:
+            self.lstm.reset_parameters()
         if self.shared_h_lower_proj:
             nn.init.orthogonal_(self.lstms[1].cell.h_lower_proj.weight)
 
     def forward(self, inputs, length=None, hx=None):
-        layer_inputs = inputs
-        state = []
-        if hx is None:
-            hx = [None] * self.num_layers
-        for layer, prev_state in zip(self.lstms, hx):
-            layer_outputs, layer_state = layer(
-                inputs=layer_inputs, length=length, hx=prev_state)
-            layer_inputs = layer_outputs
-            state.append(layer_state)
-        return layer_inputs, state
+        if self.lstm_type != 'plain':
+            layer_inputs = inputs
+            state = []
+            if hx is None:
+                hx = [None] * self.num_layers
+            for layer, prev_state in zip(self.lstms, hx):
+                layer_outputs, layer_state = layer(
+                    inputs=layer_inputs, length=length, hx=prev_state)
+                layer_inputs = layer_outputs
+                state.append(layer_state)
+            return layer_inputs, state
+        else:
+            outputs, state = self.lstm(input=inputs, hx=hx)
+            return (outputs, None), state
